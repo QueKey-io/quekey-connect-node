@@ -86,4 +86,4 @@ After successful auth, `req.session.quekey` contains:
 ```
 
 ## License
-MIT © GeneralQuery Technologies
+MIT License © 2026 [GeneralQuery Technologies Pvt. Ltd.](https://generalquery.com)

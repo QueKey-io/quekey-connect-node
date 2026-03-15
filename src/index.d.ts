@@ -1,3 +1,8 @@
+/**
+ * Copyright (c) 2026 GeneralQuery Technologies Pvt. Ltd.
+ * Licensed under the MIT License.
+ */
+
 declare module 'quekey-connect-node' {
     import { Request, Response, NextFunction, RequestHandler } from 'express';
 
