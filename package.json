@@ -1,7 +1,7 @@
 {
   "name": "quekey-connect-node",
   "version": "1.0.0",
-  "description": "Server-side Node.js SDK for QueKey Passwordless Authentication",
+  "description": "Official Node.js SDK for QueKey Passwordless Auth. Secure, zero-dependency OAuth2 + PKCE flow with server-side token exchange. Seamlessly bridge face-recognition identities into Express/MERN apps. Built by General Query.",
   "author": "GeneralQuery Technologies Pvt. Ltd.",
   "license": "MIT",
   "main": "src/index.js",
