@@ -18,8 +18,22 @@ declare module 'quekey-connect-node' {
         onSuccess?: (req: Request, res: Response, next: NextFunction) => void | Promise<void>;
     }
 
+    interface TokenResponse {
+        accessToken: string;
+        user: any;
+        tokenType: string;
+    }
+
+    interface AuthorizationRequest {
+        url: string;
+        state: string;
+        verifier: string;
+    }
+
     class QueKeyClient {
         constructor(options: QueKeyOptions);
+        createAuthorizationRequest(): AuthorizationRequest;
+        exchangeToken(code: string, verifier: string): Promise<TokenResponse>;
         login(): RequestHandler;
         callback(): RequestHandler;
         protect(): RequestHandler;

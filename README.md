@@ -68,10 +68,56 @@ That's it. The backend handles everything.
 
 | Method | Description |
 |---|---|
+| **Express Middleware** | |
 | `quekey.login()` | Returns Express handler that redirects to QueKey |
 | `quekey.callback()` | Returns Express handler that completes token exchange |
 | `quekey.protect()` | Returns Express middleware that blocks unauthenticated requests |
 | `QueKey.getUser(req)` | Static helper to get user from session |
+| **Framework Agnostic (Fastify, Koa, etc.)** | |
+| `quekey.createAuthorizationRequest()` | Returns `{ url, state, verifier }`. Save state/verifier to session and redirect user to `url`. |
+| `quekey.exchangeToken(code, verifier)` | Returns Promise resolving to `{ accessToken, user, tokenType }`. |
+
+---
+
+## Non-Express Frameworks (Fastify, Koa, NestJS, Bun, etc.)
+
+The SDK exports core, pure-JavaScript methods that do not depend on `req` or `res`. You can use them in any framework.
+
+### Example: Fastify
+
+```javascript
+fastify.get('/auth/quekey', async (request, reply) => {
+    // 1. Generate auth request
+    const { url, state, verifier } = quekey.createAuthorizationRequest();
+    
+    // 2. Save to session
+    request.session.set('qk_state', state);
+    request.session.set('qk_verifier', verifier);
+    
+    // 3. Redirect
+    return reply.redirect(url);
+});
+
+fastify.get('/auth/quekey/callback', async (request, reply) => {
+    const { code, state, error } = request.query;
+    
+    if (error || state !== request.session.get('qk_state')) {
+        return reply.redirect('/login');
+    }
+    
+    const verifier = request.session.get('qk_verifier');
+    
+    try {
+        // 4. Exchange code for token
+        const tokenData = await quekey.exchangeToken(code, verifier);
+        
+        request.session.set('user', tokenData.user);
+        return reply.redirect('/dashboard');
+    } catch (err) {
+        return reply.redirect('/login');
+    }
+});
+```
 
 ## Session Data
 

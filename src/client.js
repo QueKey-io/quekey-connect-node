@@ -51,36 +51,87 @@ class QueKeyClient {
         return crypto.createHash('sha256').update(verifier).digest('base64url');
     }
 
-    // ── Step 1: Redirect user to QueKey ───────────────────────────
+    // ── Framework-Agnostic Core Methods ───────────────────────────
+
+    /**
+     * Step 1: Generate PKCE data and authorization URL.
+     * Framework agnostic. Call this, store state/verifier, and redirect user.
+     * @returns {{ url: string, state: string, verifier: string }}
+     */
+    createAuthorizationRequest() {
+        const state = crypto.randomBytes(16).toString('hex');
+        const verifier = QueKeyClient.generateVerifier();
+        const challenge = QueKeyClient.generateChallenge(verifier);
+
+        const params = new URLSearchParams({
+            response_type: 'code',
+            client_id: this.clientId,
+            redirect_uri: this.redirectUri,
+            state,
+            code_challenge: challenge,
+            code_challenge_method: 'S256'
+        });
+
+        const url = `${this.authServerUrl}/oauth/authorize?${params.toString()}`;
+        
+        return { url, state, verifier };
+    }
+
+    // ── Express specific wrappers ──────────────────────────────────
+
     /**
      * Express route handler: GET /auth/quekey
      * Generates PKCE pair, stores in session, redirects to QueKey.
      */
     login() {
         return (req, res) => {
-            const state = crypto.randomBytes(16).toString('hex');
-            const verifier = QueKeyClient.generateVerifier();
-            const challenge = QueKeyClient.generateChallenge(verifier);
+            const { url, state, verifier } = this.createAuthorizationRequest();
 
             // Persist in session so callback can verify
             req.session.qk_state = state;
             req.session.qk_verifier = verifier;
 
-            const params = new URLSearchParams({
-                response_type: 'code',
-                client_id: this.clientId,
-                redirect_uri: this.redirectUri,
-                state,
-                code_challenge: challenge,
-                code_challenge_method: 'S256'
-            });
-
-            const authorizeUrl = `${this.authServerUrl}/oauth/authorize?${params.toString()}`;
-            res.redirect(authorizeUrl);
+            res.redirect(url);
         };
     }
 
-    // ── Step 2: Handle QueKey callback ────────────────────────────
+    /**
+     * Step 2: Exchange authorization code for access token.
+     * Framework agnostic. Validates input and communicates with QueKey.
+     * @param {string} code - The authorization code from the query string
+     * @param {string} verifier - The PKCE verifier stored in the session
+     * @returns {Promise<{ accessToken: string, user: any, tokenType: string }>}
+     */
+    async exchangeToken(code, verifier) {
+        if (!code) throw new Error('Authorization code is missing');
+        if (!verifier) throw new Error('PKCE verifier is missing (session missing or expired)');
+
+        const response = await fetch(`${this.authServerUrl}/oauth/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                grant_type: 'authorization_code',
+                client_id: this.clientId,
+                client_secret: this.clientSecret,
+                code,
+                redirect_uri: this.redirectUri,
+                code_verifier: verifier
+            })
+        });
+
+        const tokenData = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(tokenData.error || tokenData.message || 'Token exchange failed');
+        }
+
+        return {
+            accessToken: tokenData.access_token?.token || tokenData.access_token,
+            user: tokenData.access_token?.authorized_user || null,
+            tokenType: tokenData.token_type
+        };
+    }
+
     /**
      * Express route handler: GET /auth/quekey/callback
      * Validates state, exchanges code for token, fetches user, sets session.
@@ -109,31 +160,10 @@ class QueKeyClient {
 
             try {
                 // ── Token Exchange ──
-                const response = await fetch(`${this.authServerUrl}/oauth/token`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        grant_type: 'authorization_code',
-                        client_id: this.clientId,
-                        client_secret: this.clientSecret,
-                        code,
-                        redirect_uri: this.redirectUri,
-                        code_verifier: verifier
-                    })
-                });
-
-                const tokenData = await response.json();
-                
-                if (!response.ok) {
-                    throw new Error(tokenData.error || tokenData.message || 'Token exchange failed');
-                }
+                const tokenResponse = await this.exchangeToken(code, verifier);
 
                 // Store in session
-                req.session.quekey = {
-                    accessToken: tokenData.access_token?.token || tokenData.access_token,
-                    user: tokenData.access_token?.authorized_user || null,
-                    tokenType: tokenData.token_type
-                };
+                req.session.quekey = tokenResponse;
 
                 // If dev provided a custom success hook (like for DB sync / JWTs), yield to it
                 if (this.onSuccess && typeof this.onSuccess === 'function') {
